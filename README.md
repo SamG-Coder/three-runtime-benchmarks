@@ -109,6 +109,8 @@ The browser's GPU identity is recorded; the native adapter identity is not expos
 
 ## Validation on the development machine
 
+The subsequent [automatic batching report](AUTOMATIC-BATCHING-REPORT.md) records the native sorting-default correction, conservative internal instancing, render-target lifetime fix, and repeated native verification against the same saved browser baselines.
+
 The next renderer optimization is recorded in [PERFORMANCE-REPORT.md](PERFORMANCE-REPORT.md): cached native material interfaces roughly halve render/readback latency in draw-heavy cases while preserving the saved native images. Browser baselines were reused unchanged.
 
 Native fixes are recorded in [FIX-REPORT.md](FIX-REPORT.md). The corrected runtime passes all eight 3D comparisons and all six diagnostics. [RUN-REPORT.md](RUN-REPORT.md) is the preserved pre-fix baseline, including its original lighting failure.
