@@ -109,6 +109,8 @@ The browser's GPU identity is recorded; the native adapter identity is not expos
 
 ## Validation on the development machine
 
+The next renderer optimization is recorded in [PERFORMANCE-REPORT.md](PERFORMANCE-REPORT.md): cached native material interfaces roughly halve render/readback latency in draw-heavy cases while preserving the saved native images. Browser baselines were reused unchanged.
+
 Native fixes are recorded in [FIX-REPORT.md](FIX-REPORT.md). The corrected runtime passes all eight 3D comparisons and all six diagnostics. [RUN-REPORT.md](RUN-REPORT.md) is the preserved pre-fix baseline, including its original lighting failure.
 
 On 2026-09-10, the harness tests and 3D runs were exercised on Edge 152, Windows, a Ryzen 7 9800X3D, and an RTX 5080 reported by the browser. See `RUN-REPORT.md` for the recorded run and the generated `results/` reports for full diagnostics. These are local observations against the available native build, not universal product scores. Runtime source changes are outside this standalone benchmark repository.
