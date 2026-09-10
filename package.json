@@ -1,0 +1,13 @@
+{
+  "name": "three-runtime-benchmarks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests.mjs",
+    "bench:browser": "node browser.mjs",
+    "bench:runtime": "node native.mjs",
+    "compare": "node compare.mjs"
+  },
+  "dependencies": { "three": "0.184.0", "playwright": "1.58.2" }
+}
