@@ -2,7 +2,8 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { config,machine,save } from './common.mjs';
-const routes={'/suite.mjs':'suite.mjs','/three.module.js':'node_modules/three/build/three.module.js','/three.core.js':'node_modules/three/build/three.core.js'};
+import {makeMetrics} from './metrics.mjs';
+const routes={'/suite.mjs':'suite.mjs','/scenes3d.mjs':'scenes3d.mjs','/three.module.js':'node_modules/three/build/three.module.js','/three.core.js':'node_modules/three/build/three.core.js'};
 // The empty browser document only establishes a local module origin. No HTML
 // parsing, DOM layout, or UI workload is timed or passed to the native runtime.
 const server=createServer(async(req,res)=>{try {
@@ -17,6 +18,16 @@ let browser;
 try {
   browser=await chromium.launch({headless:false,channel:process.env.BROWSER_CHANNEL||'chrome'});
   const page=await browser.newPage({viewport:{width:800,height:700},deviceScaleFactor:1});
+  const session=await page.context().newCDPSession(page);
+  const browserSession=await browser.newBrowserCDPSession();
+  await session.send('Performance.enable');
+  const metrics=makeMetrics((method,args)=>session.send(method,args),async()=>{
+    const {processInfo}=await browserSession.send('SystemInfo.getProcessInfo');
+    const {metrics:entries}=await session.send('Performance.getMetrics');
+    return {liveBrowserProcesses:processInfo.length,liveProcessCpuSeconds:processInfo.reduce((sum,p)=>sum+p.cpuTime,0),rendererTaskSeconds:entries.find(m=>m.name==='TaskDuration')?.value};
+  });
+  await page.exposeFunction('__benchMeasureBegin',profile=>metrics.begin(profile));
+  await page.exposeFunction('__benchMeasureEnd',()=>metrics.end());
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const result=await page.evaluate(async({config,machine,version})=>{
     const T=await import('/three.module.js');const {runSuite}=await import('/suite.mjs');
@@ -24,7 +35,10 @@ try {
     if(!gl) throw new Error('WebGL2 unavailable');
     const ext=gl.getExtension('WEBGL_debug_renderer_info');
     const gpu=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
-    return runSuite(T,config,{...machine,environment:'Browser Three.js WebGL2',browserVersion:version,userAgent:navigator.userAgent,gpu,threeRevision:T.REVISION});
+    return runSuite(T,config,{...machine,environment:'Browser Three.js WebGL2',browserVersion:version,userAgent:navigator.userAgent,gpu,threeRevision:T.REVISION},()=>{}, {
+      measureBegin:globalThis.__benchMeasureBegin,measureEnd:globalThis.__benchMeasureEnd,
+      rendererReady(renderer) {if(config.mode==='frames') {document.body.style.margin='0';document.body.appendChild(renderer.domElement);}}
+    });
   },{config,machine,version:browser.version()});
   await save(process.argv[2]||'results/browser.json',result);
 } finally {await browser?.close();await new Promise(r=>server.close(r));}

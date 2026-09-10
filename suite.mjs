@@ -1,17 +1,23 @@
-export const workloads = ['typed-array', 'scene-transforms', 'draw-calls', 'instances', 'texture-upload', 'multipass'];
+import {threeDWorkloads,make3DCase} from './scenes3d.mjs';
+export const workloads = ['typed-array', 'scene-transforms', 'draw-calls', 'instances', 'texture-upload', 'multipass', ...threeDWorkloads];
 export function summarize(samples) {
   if (!samples.length || samples.some(x => !Number.isFinite(x) || x < 0)) throw new Error('Invalid timing samples');
   const sorted = [...samples].sort((a, b) => a - b);
   const percentile = p => sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)];
-  return { medianMs: percentile(.5), p95Ms: percentile(.95), meanMs: samples.reduce((a,b) => a+b, 0)/samples.length };
+  const meanMs=samples.reduce((a,b) => a+b, 0)/samples.length;
+  const stddevMs=Math.sqrt(samples.reduce((sum,x)=>sum+(x-meanMs)**2,0)/samples.length);
+  return { medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms:percentile(.99),meanMs,minMs:sorted[0],maxMs:sorted.at(-1),stddevMs,coefficientOfVariation:meanMs?stddevMs/meanMs:0,over16_67Ms:samples.filter(x=>x>1000/60+.05).length,over33_33Ms:samples.filter(x=>x>1000/30+.05).length };
 }
 export function validateConfig(config) {
   for (const key of ['warmup', 'samples', 'repeats', 'size']) {
     if (!Number.isInteger(config[key]) || config[key] < 1) throw new Error(`Invalid ${key}`);
   }
   if (!config.tests.length || config.tests.some(t => !workloads.includes(t))) throw new Error('Unknown or empty tests');
+  if(config.mode && !['latency','frames'].includes(config.mode)) throw new Error('Unknown timing mode');
+  if(config.mode==='frames' && config.tests.some(t=>!threeDWorkloads.includes(t))) throw new Error('Frame pacing mode requires --3d or explicit 3D tests');
 }
 function makeCase(T, name, size, renderer, flush) {
+  if(threeDWorkloads.includes(name)) return make3DCase(T,name,size,renderer,flush);
   if (name === 'typed-array') {
     const data = new Float32Array(262144);
     return { step(frame) { for (let i=0;i<data.length;i++) data[i]=(i % 1024)*.25+(frame % 8); },
@@ -24,6 +30,7 @@ function makeCase(T, name, size, renderer, flush) {
       check() { const e=root.children[4999].matrixWorld.elements; if(Math.abs(e[12]-99)>1e-5 || Math.abs(e[13]-49)>1e-5) throw new Error('Transform mismatch'); return {x:e[12],y:e[13]}; }, dispose() {} };
   }
   const scene=new T.Scene(), camera=new T.OrthographicCamera(-1,1,1,-1,.1,10);
+  scene.background=new T.Color(0x010101);
   camera.position.z=2;
   const target=new T.WebGLRenderTarget(size,size,{samples:0,depthBuffer:true,stencilBuffer:false});
   const geometry=new T.PlaneGeometry(.055,.055);
@@ -62,30 +69,57 @@ function makeCase(T, name, size, renderer, flush) {
       if(data && (Math.abs(pixel[1]-(frame%256))>2 || pixel[2]>2)) throw new Error(`${name}: stale or incorrect texture pixel ${[...pixel.slice(0,4)]}`);
       return {coverage};
     },
-    dispose() { renderer.setRenderTarget(null); for(const r of resources) r.dispose(); }
+    dispose() { renderer.setRenderTarget(null); scene.traverse(object=>{if(object.isMesh) object.dispose?.();});scene.clear();for(const r of resources) r.dispose(); }
   };
 }
-export async function runSuite(T, config, metadata, flush=()=>{}) {
+function frameTick(draw,frame) {
+  return new Promise((resolve,reject)=>{
+    const timeout=setTimeout(()=>reject(new Error('No animation frame within 10 seconds')),10000);
+    requestAnimationFrame(timestamp=>{
+      clearTimeout(timeout);
+      try {const start=performance.now();draw(frame);resolve({timestamp,cpuMs:performance.now()-start});} catch(e) {reject(e);}
+    });
+  });
+}
+export async function runSuite(T, config, metadata, flush=()=>{}, hooks={}) {
   validateConfig(config);
   let renderer;
   if(config.tests.some(t=>!['typed-array','scene-transforms'].includes(t))) {
     renderer=new T.WebGLRenderer({antialias:false,alpha:false});
     renderer.setPixelRatio(1); renderer.setSize(config.size,config.size);
-    renderer.setClearColor(0x000000,1);
+    await hooks.rendererReady?.(renderer);
+    renderer.setClearColor(0x010101,1);
   }
-  const results=[];
+  const results=[],captures=[];
   try {
     for(let repeat=0;repeat<config.repeats;repeat++) for(const name of config.tests) {
-      const task=makeCase(T,name,config.size,renderer,flush);
+      let task,measuring=false;
       try {
-        for(let i=0;i<config.warmup;i++) task.step(i);
-        const samples=[];
-        for(let i=0;i<config.samples;i++) { const start=performance.now(); task.step(i); samples.push(performance.now()-start); }
+        task=makeCase(T,name,config.size,renderer,flush);
+        let previous;
+        for(let i=0;i<config.warmup;i++) {
+          if(config.mode==='frames') previous=await frameTick(task.draw,i);else task.step(i);
+        }
+        await hooks.measureBegin?.(config.profileAllocations);
+        measuring=true;
+        const samples=[],submissionSamples=[];
+        if(config.mode==='frames') {
+          // Discard the interval containing the instrumentation checkpoint.
+          previous=await frameTick(task.draw,0);
+          for(let i=0;i<config.samples;i++) {const current=await frameTick(task.draw,i+1);samples.push(current.timestamp-previous.timestamp);submissionSamples.push(current.cpuMs);previous=current;}
+        } else for(let i=0;i<config.samples;i++) { const start=performance.now(); task.step(i); samples.push(performance.now()-start); }
+        const resources=await hooks.measureEnd?.();
+        measuring=false;
         let check, error;
-        try {check=task.check(config.samples-1);} catch(e) {error=e.message;}
-        results.push({name,repeat,status:error?'invalid':'valid',...summarize(samples),samples,check,error});
-      } finally {task.dispose();}
+        try {check=task.check(config.samples-1);if(check?.valid===false) error=check.errors.join('; ');} catch(e) {error=e.message;}
+        if(repeat===0 && task.capture) captures.push({name,...task.capture()});
+        results.push({name,repeat,status:error?'invalid':'valid',...summarize(samples),samples,submission:submissionSamples.length?{...summarize(submissionSamples),samples:submissionSamples}:undefined,resources,check,error,details:task.details});
+      } catch(e) {
+        let resources;
+        if(measuring) {try {resources=await hooks.measureEnd?.();} catch { /* Preserve the original workload failure. */ }}
+        results.push({name,repeat,status:'error',error:e.stack||e.message,resources});
+      } finally {task?.dispose();}
     }
   } finally {renderer?.dispose();}
-  return {schemaVersion:1, workloadVersion:1, date:new Date().toISOString(), config, metadata, results};
+  return {schemaVersion:2, workloadVersion:2, date:new Date().toISOString(), config, metadata, results,captures};
 }

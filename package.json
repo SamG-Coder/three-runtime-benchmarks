@@ -7,7 +7,18 @@
     "test": "node --test tests.mjs",
     "bench:browser": "node browser.mjs",
     "bench:runtime": "node native.mjs",
-    "compare": "node compare.mjs"
+    "compare": "node compare.mjs",
+    "report": "node report.mjs",
+    "bench:browser:3d": "node browser.mjs results/browser-3d.json --3d",
+    "bench:runtime:3d": "node native.mjs results/runtime-3d.json --3d",
+    "bench:browser:frames": "node browser.mjs results/browser-frames.json --3d --frames",
+    "bench:runtime:frames": "node native.mjs results/runtime-frames.json --3d --frames",
+    "bench:browser:allocations": "node browser.mjs results/browser-allocations.json --3d --allocations",
+    "bench:runtime:allocations": "node native.mjs results/runtime-allocations.json --3d --allocations"
   },
-  "dependencies": { "three": "0.184.0", "playwright": "1.58.2" }
+  "dependencies": {
+    "playwright": "1.58.2",
+    "pngjs": "7.0.0",
+    "three": "0.184.0"
+  }
 }
