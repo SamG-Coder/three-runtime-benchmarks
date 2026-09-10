@@ -6,6 +6,29 @@ import {createScene3D,threeDWorkloads,imageSummary,imageDifference} from './scen
 import {sampledAllocationBytes,deltaFields,allocationSites} from './metrics.mjs';
 import {compareReports} from './comparison.mjs';
 import {execFileSync} from 'node:child_process';
+import {createRenderer as createWebGPURenderer,beginLogicalFrame} from './webgpu.mjs';
+
+test('WebGPU logical frames advance FRAME-scoped lighting and shadow state',()=>{
+  const nodeFrame={frameId:3,update(){this.frameId++;}};
+  let resets=0;
+  const renderer={info:{autoReset:true,reset(){resets++;}},_nodes:{nodeFrame}};
+  beginLogicalFrame(renderer);beginLogicalFrame(renderer);
+  assert.equal(nodeFrame.frameId,5);assert.equal(renderer.info.frame,5);assert.equal(resets,2);
+});
+
+test('WebGPU measurement awaits every warmup, sample and validation',async()=>{
+  let steps=0,checked=false,disposed=false;
+  const renderer={setPixelRatio(){},setSize(){},setClearColor(){},dispose(){disposed=true;}};
+  const result=await runSuite({}, {backend:'webgpu',warmup:2,samples:3,repeats:1,size:512,tests:['3d-meshes']},{},()=>{}, {
+    createRenderer:async()=>renderer,
+    makeCase:()=>({async step(){await new Promise(r=>setTimeout(r,1));steps++;},async check(){await Promise.resolve();assert.equal(steps,5);checked=true;return {valid:true};},dispose(){}})
+  });
+  assert.equal(result.results[0].status,'valid');assert.equal(checked,true);assert.equal(disposed,true);
+});
+
+test('WebGPU runner rejects a WebGL fallback',async()=>{
+  await assert.rejects(createWebGPURenderer({WebGPURenderer:class {backend={isWebGPUBackend:false};async init(){}}}),/fallback/);
+});
 test('percentiles preserve sample order and reject invalid samples',()=>{
   const s=[9,1,5,2,3],stats=summarize(s);assert.equal(stats.medianMs,3);assert.equal(stats.p95Ms,9);assert.equal(stats.meanMs,4);assert.deepEqual(s,[9,1,5,2,3]);assert.throws(()=>summarize([]));assert.throws(()=>summarize([NaN]));
 });
@@ -36,6 +59,14 @@ test('comparison withholds ratios when renderings differ despite local checks pa
   const config={tests:['3d-meshes'],repeats:1};
   const make=value=>({workloadVersion:2,config,metadata:{},results:[{name:'3d-meshes',repeat:0,status:'valid',samples:[1],medianMs:1,check:{first:{thumbnail:[value],foreground:.5},second:{thumbnail:[value],foreground:.5}}}]});
   assert.equal(compareReports(make(0),make(255))[0].valid,false);assert.equal(compareReports(make(0),make(0))[0].ratio,1);
+});
+
+test('WebGPU frame comparisons require recorded native presentation',()=>{
+  const config={backend:'webgpu',mode:'frames',tests:['3d-meshes'],repeats:1,size:512};
+  const pose={thumbnail:[32],foreground:.5};
+  const make=presents=>({workloadVersion:2,config,metadata:{statsBefore:{presents:0},statsAfter:{width:512,height:512,presents}},results:[{name:'3d-meshes',repeat:0,status:'valid',samples:[1],medianMs:1,check:{first:pose,second:pose}}]});
+  assert.equal(compareReports(make(1),make(0))[0].valid,false);
+  assert.equal(compareReports(make(1),make(1))[0].valid,true);
 });
 test('GC measurements collect events from a synchronous workload before moving on',()=>{
   const moduleUrl=new URL('./gc.mjs',import.meta.url).href;

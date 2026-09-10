@@ -1,6 +1,6 @@
 # Browser versus ThreeBrowserRuntime benchmarks
 
-Fourteen deterministic workloads using one shared JavaScript suite: eight actual 3D cases plus six smaller diagnostics. Browser execution uses stock Three.js 0.184.0 and WebGL2; native execution uses ThreeBrowserRuntime's Three.js facade and native renderer. This compares application API paths, not identical rendering backends or two different JavaScript languages. Both environments use V8, potentially different versions. A direct stock Three.js WebGPU versus native WebGPU comparison is outside this suite.
+Fourteen deterministic workloads using one shared JavaScript suite: eight actual 3D cases plus six smaller diagnostics. Browser execution uses stock Three.js 0.184.0 and WebGL2; native execution uses ThreeBrowserRuntime's Three.js facade and native renderer. This compares application API paths, not identical rendering backends or two different JavaScript languages. Both environments use V8, potentially different versions. An optional `--webgpu` path compares the same stock Three.js 0.184.0 WebGPURenderer and eight shared 3D scenes in the browser and native WebGPU runtime. See [WEBGPU-REPORT.md](WEBGPU-REPORT.md).
 
 HTML, DOM layout, CSS, and UI compatibility are excluded. There are no HTML test files. The native runner imports JavaScript directly and never loads a page. The browser runner opens an empty local document only to execute the shared JavaScript modules; browser startup and this document setup are outside all measurements.
 
@@ -74,6 +74,39 @@ node native.mjs results/runtime-cpu.json
 node compare.mjs results/browser-cpu.json results/runtime-cpu.json
 Remove-Item Env:TESTS
 ```
+
+## Direct OpenGL experiment
+
+Direct GL now uses the main `three/00-cmdbuf.js` stream. See [the migration report](DIRECT-GL-MAIN-CMD-REPORT.md) for validation and fresh native measurements.
+
+The optional `--direct-gl` native mode runs stock Three.js WebGLRenderer through a binary graphics-command bridge on the existing OpenGL context, bypassing native threepp scene objects and its renderer. See [DIRECT-OPENGL-REPORT.md](DIRECT-OPENGL-REPORT.md) for the direct/threepp/browser comparison and allocation tradeoffs.
+
+```powershell
+node native.mjs results/runtime-direct-gl.json --3d --direct-gl
+node compare.mjs results/browser-3d.json results/runtime-direct-gl.json
+node native.mjs results/runtime-direct-gl-frames.json --3d --direct-gl --frames
+node native.mjs results/runtime-direct-gl-allocations.json --3d --direct-gl --allocations
+```
+
+Rebuild/stage the native addon first. Reuse the existing browser WebGL baseline because this mode keeps the same workload/configuration and synchronous readback protocol. It is an experimental adapter subset, not a complete WebGL implementation or removal of the threepp build dependency. Its context/window startup still uses existing runtime infrastructure. Direct on-screen presentation is currently uncapped with VSync disabled, so callback interval differences from the facade are not FPS comparisons.
+
+## WebGPU comparison
+
+WebGPU uses the same eight 3D scenes, resolution and validation tolerances. Both sides load the benchmark repository's pinned stock Three.js package; native uses its staged runtime WebGPU adapter instead of the WebGL facade. Rebuild/stage ThreeBrowser before running. HTML/DOM/CSS workloads remain excluded.
+
+```powershell
+npm run bench:browser:webgpu:3d
+npm run bench:runtime:webgpu:3d
+node compare.mjs results/browser-webgpu-3d.json results/runtime-webgpu-3d.json
+npm run bench:browser:webgpu:frames
+npm run bench:runtime:webgpu:frames
+npm run bench:browser:webgpu:allocations
+npm run bench:runtime:webgpu:allocations
+```
+
+Run GPU passes sequentially. WebGPU latency awaits `readRenderTargetPixelsAsync` after every frame, including mapped pixel transfer and allocation; it is separate from the synchronous WebGL baseline. WebGL fallback is rejected. Since r184 advances FRAME-scoped light/shadow nodes from its internal animation loop rather than each `render()`, the harness stops that loop and advances its pinned logical-frame state exactly once per benchmark update on both sides. This includes live lighting and shadow updates during offscreen runs. The private integration is guarded to revision 184 and must be reviewed when upgrading Three.js. Frame mode still uses real host/browser animation callbacks and on-screen presentation.
+
+The native WebGPU host has a 240 Hz scheduling target and reports VSync disabled. Browser callbacks follow display scheduling. Compare update/submission time separately; do not use callback interval ratios as an FPS ranking. WebGPU results include `config.backend`, preventing accidental comparison with saved WebGL reports. Existing WebGL workloads and baseline files are preserved.
 
 ## Method and interpretation
 

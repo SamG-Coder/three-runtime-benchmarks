@@ -14,7 +14,16 @@
     "bench:browser:frames": "node browser.mjs results/browser-frames.json --3d --frames",
     "bench:runtime:frames": "node native.mjs results/runtime-frames.json --3d --frames",
     "bench:browser:allocations": "node browser.mjs results/browser-allocations.json --3d --allocations",
-    "bench:runtime:allocations": "node native.mjs results/runtime-allocations.json --3d --allocations"
+    "bench:runtime:allocations": "node native.mjs results/runtime-allocations.json --3d --allocations",
+    "bench:browser:webgpu:3d": "node browser.mjs results/browser-webgpu-3d.json --3d --webgpu",
+    "bench:browser:webgpu:frames": "node browser.mjs results/browser-webgpu-frames.json --3d --webgpu --frames",
+    "bench:browser:webgpu:allocations": "node browser.mjs results/browser-webgpu-allocations.json --3d --webgpu --allocations",
+    "bench:runtime:webgpu:3d": "node native.mjs results/runtime-webgpu-3d.json --3d --webgpu",
+    "bench:runtime:webgpu:frames": "node native.mjs results/runtime-webgpu-frames.json --3d --webgpu --frames",
+    "bench:runtime:webgpu:allocations": "node native.mjs results/runtime-webgpu-allocations.json --3d --webgpu --allocations",
+    "bench:runtime:direct-gl:3d": "node native.mjs results/runtime-direct-gl-3d.json --3d --direct-gl",
+    "bench:runtime:direct-gl:frames": "node native.mjs results/runtime-direct-gl-frames.json --3d --direct-gl --frames",
+    "bench:runtime:direct-gl:allocations": "node native.mjs results/runtime-direct-gl-allocations.json --3d --direct-gl --allocations"
   },
   "dependencies": {
     "playwright": "1.58.2",

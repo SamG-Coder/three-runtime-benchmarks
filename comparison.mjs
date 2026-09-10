@@ -18,6 +18,7 @@ export function compareReports(a,b) {
       }
     }
     if(a.config.mode==='frames' && b.metadata.statsAfter && (b.metadata.statsAfter.width!==a.config.size || b.metadata.statsAfter.height!==a.config.size)) reasons.push('Native presentation dimensions differ from browser');
+    if(a.config.mode==='frames' && a.config.backend==='webgpu' && !(b.metadata.statsAfter?.presents>b.metadata.statsBefore?.presents)) reasons.push('Native WebGPU did not record on-screen presentation');
     const aggregate=rows=> {
       if(!rows.length || rows.some(x=>!x.samples?.length)) return null;
       const timing=summarize(rows.flatMap(x=>x.samples));

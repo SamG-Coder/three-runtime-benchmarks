@@ -14,6 +14,8 @@ export function validateConfig(config) {
   }
   if (!config.tests.length || config.tests.some(t => !workloads.includes(t))) throw new Error('Unknown or empty tests');
   if(config.mode && !['latency','frames'].includes(config.mode)) throw new Error('Unknown timing mode');
+  if(config.backend && config.backend!=='webgpu') throw new Error('Unknown backend');
+  if(config.backend==='webgpu' && config.tests.some(t=>!threeDWorkloads.includes(t))) throw new Error('WebGPU comparison requires 3D workloads');
   if(config.mode==='frames' && config.tests.some(t=>!threeDWorkloads.includes(t))) throw new Error('Frame pacing mode requires --3d or explicit 3D tests');
 }
 function makeCase(T, name, size, renderer, flush) {
@@ -85,7 +87,7 @@ export async function runSuite(T, config, metadata, flush=()=>{}, hooks={}) {
   validateConfig(config);
   let renderer;
   if(config.tests.some(t=>!['typed-array','scene-transforms'].includes(t))) {
-    renderer=new T.WebGLRenderer({antialias:false,alpha:false});
+    renderer=hooks.createRenderer ? await hooks.createRenderer(T) : new T.WebGLRenderer({antialias:false,alpha:false});
     renderer.setPixelRatio(1); renderer.setSize(config.size,config.size);
     await hooks.rendererReady?.(renderer);
     renderer.setClearColor(0x010101,1);
@@ -95,10 +97,10 @@ export async function runSuite(T, config, metadata, flush=()=>{}, hooks={}) {
     for(let repeat=0;repeat<config.repeats;repeat++) for(const name of config.tests) {
       let task,measuring=false;
       try {
-        task=makeCase(T,name,config.size,renderer,flush);
+        task=hooks.makeCase ? hooks.makeCase(T,name,config.size,renderer,flush) : makeCase(T,name,config.size,renderer,flush);
         let previous;
         for(let i=0;i<config.warmup;i++) {
-          if(config.mode==='frames') previous=await frameTick(task.draw,i);else task.step(i);
+          if(config.mode==='frames') previous=await frameTick(task.draw,i);else if(config.backend==='webgpu') await task.step(i);else task.step(i);
         }
         await hooks.measureBegin?.(config.profileAllocations);
         measuring=true;
@@ -107,11 +109,11 @@ export async function runSuite(T, config, metadata, flush=()=>{}, hooks={}) {
           // Discard the interval containing the instrumentation checkpoint.
           previous=await frameTick(task.draw,0);
           for(let i=0;i<config.samples;i++) {const current=await frameTick(task.draw,i+1);samples.push(current.timestamp-previous.timestamp);submissionSamples.push(current.cpuMs);previous=current;}
-        } else for(let i=0;i<config.samples;i++) { const start=performance.now(); task.step(i); samples.push(performance.now()-start); }
+        } else for(let i=0;i<config.samples;i++) { const start=performance.now(); if(config.backend==='webgpu') await task.step(i);else task.step(i); samples.push(performance.now()-start); }
         const resources=await hooks.measureEnd?.();
         measuring=false;
         let check, error;
-        try {check=task.check(config.samples-1);if(check?.valid===false) error=check.errors.join('; ');} catch(e) {error=e.message;}
+        try {check=config.backend==='webgpu'?await task.check(config.samples-1):task.check(config.samples-1);if(check?.valid===false) error=check.errors.join('; ');} catch(e) {error=e.message;}
         if(repeat===0 && task.capture) captures.push({name,...task.capture()});
         results.push({name,repeat,status:error?'invalid':'valid',...summarize(samples),samples,submission:submissionSamples.length?{...summarize(submissionSamples),samples:submissionSamples}:undefined,resources,check,error,details:task.details});
       } catch(e) {
