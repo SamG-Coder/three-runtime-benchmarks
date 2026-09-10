@@ -2,8 +2,16 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { config,machine,save } from './common.mjs';
-const routes={'/':'index.html','/suite.mjs':'suite.mjs','/three.module.js':'node_modules/three/build/three.module.js','/three.core.js':'node_modules/three/build/three.core.js'};
-const server=createServer(async(req,res)=>{try {const file=routes[req.url];if(!file){res.writeHead(404);res.end();return;}res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Embedder-Policy','require-corp');res.setHeader('Content-Type',file.endsWith('.html')?'text/html':'text/javascript');res.end(await readFile(new URL(file,import.meta.url)));}catch{res.writeHead(500);res.end();}});
+const routes={'/suite.mjs':'suite.mjs','/three.module.js':'node_modules/three/build/three.module.js','/three.core.js':'node_modules/three/build/three.core.js'};
+// The empty browser document only establishes a local module origin. No HTML
+// parsing, DOM layout, or UI workload is timed or passed to the native runtime.
+const server=createServer(async(req,res)=>{try {
+  res.setHeader('Cross-Origin-Opener-Policy','same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy','require-corp');
+  if(req.url==='/') {res.setHeader('Content-Type','text/html');res.end();return;}
+  const file=routes[req.url];if(!file){res.writeHead(404);res.end();return;}
+  res.setHeader('Content-Type','text/javascript');res.end(await readFile(new URL(file,import.meta.url)));
+}catch{res.writeHead(500);res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 let browser;
 try {

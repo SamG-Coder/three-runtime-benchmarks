@@ -2,6 +2,8 @@
 
 Six deterministic workloads using one shared JavaScript suite. Browser execution uses stock Three.js 0.184.0 and WebGL2; native execution uses ThreeBrowserRuntime's Three.js facade and native renderer. This compares application API paths, not identical rendering backends or two different JavaScript languages. Both environments use V8, potentially different versions. A direct stock Three.js WebGPU versus native WebGPU comparison is outside this suite.
 
+HTML, DOM layout, CSS, and UI compatibility are excluded. There are no HTML test files. The native runner imports JavaScript directly and never loads a page. The browser runner opens an empty local document only to execute the shared JavaScript modules; browser startup and this document setup are outside all measurements.
+
 | Test | Fixed workload | What it probes |
 | --- | --- | --- |
 | typed-array | Rewrite 262,144 float32 elements (1 MiB) | JS loop and typed-array throughput |
