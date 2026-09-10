@@ -109,6 +109,8 @@ The browser's GPU identity is recorded; the native adapter identity is not expos
 
 ## Validation on the development machine
 
+The latest [per-frame report](PER-FRAME-REPORT.md) measures removal of repeated native material-classification work and unnecessary JavaScript empty-map binding calls, with unchanged native images and saved browser baselines.
+
 The subsequent [automatic batching report](AUTOMATIC-BATCHING-REPORT.md) records the native sorting-default correction, conservative internal instancing, render-target lifetime fix, and repeated native verification against the same saved browser baselines.
 
 The next renderer optimization is recorded in [PERFORMANCE-REPORT.md](PERFORMANCE-REPORT.md): cached native material interfaces roughly halve render/readback latency in draw-heavy cases while preserving the saved native images. Browser baselines were reused unchanged.
